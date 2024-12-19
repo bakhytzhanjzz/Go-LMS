@@ -3,6 +3,7 @@ A dynamic, interactive Learning Management System (LMS) designed to make educati
 
 # Team Members
 Abdilmazhit Bakhytzhan
+
 Paliev Dmitriy
 
 # Learning Management System (LMS)
