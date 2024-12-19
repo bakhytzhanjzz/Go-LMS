@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Go-LMS</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+  <!-- Navbar -->
+  <nav class="navbar navbar-expand-lg navbar-light bg-light">
+    <div class="container-fluid">
+      <a class="navbar-brand" href="#">Go-And-Learn</a>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="navbarNav">
+        <ul class="navbar-nav ms-auto">
+          <li class="nav-item">
+            <a class="nav-link" href="#">About</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="#">All Courses</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="#">My Courses</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="#">Log In</a>
+          </li>
+          <li class="nav-item">
+            <a class="btn btn-primary nav-link text-white" href="#">Sign Up</a>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Header Section -->
+  <header class="text-center bg-primary text-white py-5">
+    <div class="container">
+      <h1>Welcome to Go-And-Learn</h1>
+      <p class="lead">Your learning journey starts here</p>
+    </div>
+  </header>
+
+  <!-- User Management Section -->
+  <section class="container py-5 bg-light">
+    <h2 class="text-center">User Management</h2>
+    <div class="row">
+      <div class="col-md-4">
+        <form id="user-form">
+          <div class="mb-3">
+            <label for="name" class="form-label">Name</label>
+            <input type="text" class="form-control" id="name" placeholder="Enter name">
+          </div>
+          <div class="mb-3">
+            <label for="email" class="form-label">Email</label>
+            <input type="email" class="form-control" id="email" placeholder="Enter email">
+          </div>
+          <button type="button" class="btn btn-primary" onclick="createUser()">Create User</button>
+        </form>
+      </div>
+      <div class="col-md-8">
+        <button class="btn btn-secondary mb-3" onclick="fetchUsers()">Refresh Users</button>
+        <table class="table table-bordered">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Name</th>
+              <th>Email</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="user-table">
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="bg-light py-4">
+    <div class="container text-center">
+      <p class="mb-2">Quick Links</p>
+      <a href="#" class="btn btn-link">About Us</a>
+      <a href="#" class="btn btn-link">Contacts</a>
+      <a href="#" class="btn btn-link">Social Media</a>
+      <a href="#" class="btn btn-link">Download the App</a>
+    </div>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    async function fetchUsers() {
+  const response = await fetch("/api/users");
+  const data = await response.json();
+  const table = document.getElementById("user-table");
+  table.innerHTML = "";
+  if (data.status === "success") {
+    data.users.forEach(user => {
+      const row = `
+        <tr>
+          <td>${user.ID}</td>
+          <td>${user.Name}</td>
+          <td>${user.Email}</td>
+          <td>
+            <button class="btn btn-warning btn-sm" onclick="updateUser(${user.ID})">Update</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteUser(${user.ID})">Delete</button>
+          </td>
+        </tr>`;
+      table.innerHTML += row;
+    });
+  } else {
+    alert(data.message);
+  }
+}
+
+async function createUser() {
+  const name = document.getElementById("name").value;
+  const email = document.getElementById("email").value;
+  const response = await fetch("/api/users", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: `name=${name}&email=${email}`,
+  });
+  const data = await response.json();
+  if (data.status === "success") {
+    alert("User created successfully!");
+    fetchUsers();
+  } else {
+    alert(data.message);
+  }
+}
+
+async function deleteUser(id) {
+  const response = await fetch(`/api/users/${id}`, {
+    method: "DELETE",
+  });
+  const data = await response.json();
+  if (data.status === "success") {
+    alert("User deleted successfully!");
+    fetchUsers();
+  } else {
+    alert(data.message);
+  }
+}
+
+async function updateUser(id) {
+  const name = prompt("Enter new name:");
+  const email = prompt("Enter new email:");
+  if (name && email) {
+    const response = await fetch(`/api/users/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: `name=${name}&email=${email}`,
+    });
+    const data = await response.json();
+    if (data.status === "success") {
+      alert("User updated successfully!");
+      fetchUsers();
+    } else {
+      alert(data.message);
+    }
+  } else {
+    alert("Both name and email are required.");
+  }
+}
+  </script>
+</body>
+</html>
