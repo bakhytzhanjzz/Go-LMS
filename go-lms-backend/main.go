@@ -1,14 +1,16 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 
-	_ "github.com/lib/pq"
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 type RequestData struct {
@@ -21,29 +23,38 @@ type ResponseData struct {
 }
 
 type User struct {
-	ID    uint   `json:"id" gorm:"primaryKey"`
-	Name  string `json:"name"`
-	Email string `json:"email"`
+	ID    string `json:"id" bson:"_id,omitempty"`
+	Name  string `json:"name" bson:"name"`
+	Email string `json:"email" bson:"email"`
 }
 
-var db *gorm.DB
+var mongoCli *mongo.Client
+var db *mongo.Collection
+var disconnectFunc = func() error { return nil }
 
-// Initialize database connection
 func initDB() {
-	dsn := "user=postgres password=1234 dbname=go_lms sslmode=disable"
-	var err error
-	db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	uri := "mongodb+srv://Dima:OuRLSz6NWvWsvlbM@cluster0.sfsqz.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+
+	serverAPI := options.ServerAPI(options.ServerAPIVersion1)
+	clientOptions := options.Client().ApplyURI(uri).SetServerAPIOptions(serverAPI)
+
+	client, err := mongo.Connect(context.TODO(), clientOptions)
 	if err != nil {
-		log.Fatal("Error connecting to the database: ", err)
+		log.Fatal("Error creating MongoDB client: ", err)
+	}
+	mongoCli = client
+	disconnectFunc = func() error {
+		return mongoCli.Disconnect(context.Background())
 	}
 
-	// Auto migrate the User model
-	db.AutoMigrate(&User{})
-	fmt.Println("Successfully connected to the database")
+	if err := client.Database("admin").RunCommand(context.TODO(), bson.D{{Key: "ping", Value: 1}}).Err(); err != nil {
+		log.Fatal("Error pinging MongoDB: ", err)
+	}
+	fmt.Println("Successfully connected to MongoDB!")
+
+	db = client.Database("Go-LMS").Collection("users")
 }
 
-// CRUD operations for User
-// Create User
 func createUser(w http.ResponseWriter, r *http.Request) {
 	var user User
 	err := json.NewDecoder(r.Body).Decode(&user)
@@ -57,15 +68,14 @@ func createUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Save user to the database
-	result := db.Create(&user)
-	if result.Error != nil {
+	result, err := db.InsertOne(r.Context(), user)
+	if err != nil {
+		log.Println("Error inserting document into MongoDB:", err)
 		http.Error(w, `{"status":"fail","message":"Error saving user"}`, http.StatusInternalServerError)
 		return
 	}
 
-	// Log the created user for debugging
-	fmt.Printf("Created User ID: %d, Name: %s, Email: %s\n", user.ID, user.Name, user.Email)
+	log.Printf("Inserted user with ID: %v\n", result.InsertedID)
 
 	response := ResponseData{
 		Status:  "success",
@@ -77,11 +87,23 @@ func createUser(w http.ResponseWriter, r *http.Request) {
 
 func getUsers(w http.ResponseWriter, r *http.Request) {
 	var users []User
-	if err := db.Find(&users).Error; err != nil {
+	cursor, err := db.Find(context.Background(), bson.D{})
+	if err != nil {
 		http.Error(w, `{"status":"fail","message":"Error retrieving users"}`, http.StatusInternalServerError)
 		return
 	}
-	// Respond with the list of users
+	defer cursor.Close(context.Background())
+
+	for cursor.Next(context.Background()) {
+		var user User
+		err := cursor.Decode(&user)
+		if err != nil {
+			http.Error(w, `{"status":"fail","message":"Error decoding user"}`, http.StatusInternalServerError)
+			return
+		}
+		users = append(users, user)
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(users)
 }
@@ -89,7 +111,8 @@ func getUsers(w http.ResponseWriter, r *http.Request) {
 func getUserByID(w http.ResponseWriter, r *http.Request) {
 	id := r.URL.Query().Get("id")
 	var user User
-	if err := db.First(&user, id).Error; err != nil {
+	err := db.FindOne(context.Background(), bson.M{"_id": id}).Decode(&user)
+	if err != nil {
 		http.Error(w, `{"status":"fail","message":"User not found"}`, http.StatusNotFound)
 		return
 	}
@@ -104,30 +127,17 @@ func updateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Ensure Name and Email are provided
 	if user.Name == "" || user.Email == "" {
 		http.Error(w, `{"status":"fail","message":"Name and Email are required"}`, http.StatusBadRequest)
 		return
 	}
 
-	var existingUser User
-	if err := db.First(&existingUser, user.ID).Error; err != nil {
-		http.Error(w, `{"status":"fail","message":"User not found"}`, http.StatusNotFound)
+	_, err = db.UpdateOne(context.Background(), bson.M{"_id": user.ID}, bson.M{"$set": bson.M{"name": user.Name, "email": user.Email}})
+	if err != nil {
+		http.Error(w, `{"status":"fail","message":"Error updating user"}`, http.StatusInternalServerError)
 		return
 	}
 
-	// Update user fields
-	if user.Name != "" {
-		existingUser.Name = user.Name
-	}
-	if user.Email != "" {
-		existingUser.Email = user.Email
-	}
-
-	// Save the updated user to the database
-	db.Save(&existingUser)
-
-	// Respond with success
 	response := ResponseData{
 		Status:  "success",
 		Message: "User successfully updated",
@@ -138,13 +148,17 @@ func updateUser(w http.ResponseWriter, r *http.Request) {
 
 func deleteUser(w http.ResponseWriter, r *http.Request) {
 	id := r.URL.Query().Get("id")
-	var user User
-	if err := db.First(&user, id).Error; err != nil {
-		http.Error(w, `{"status":"fail","message":"User not found"}`, http.StatusNotFound)
+	deletedObjectID, err := primitive.ObjectIDFromHex(id)
+	if err != nil {
+		http.Error(w, `{"status":"fail","message":"Invalid ID format"}`, http.StatusBadRequest)
+		return
+	}
+	_, err = db.DeleteOne(context.Background(), bson.D{{Key: "_id", Value: deletedObjectID}})
+	if err != nil {
+		http.Error(w, `{"status":"fail","message":"Error deleting user"}`, http.StatusInternalServerError)
 		return
 	}
 
-	db.Delete(&user)
 	response := ResponseData{
 		Status:  "success",
 		Message: "User successfully deleted",
@@ -153,7 +167,6 @@ func deleteUser(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
-// handleJSON processes JSON requests and sends appropriate responses
 func handleJSON(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -169,7 +182,6 @@ func handleJSON(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if the key "message" exists
 	if _, ok := reqData["message"]; !ok {
 		response := ResponseData{
 			Status:  "fail",
@@ -180,7 +192,6 @@ func handleJSON(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// If the key is "message", but its value is empty, it should still be success
 	if reqData["message"] == "" {
 		response := ResponseData{
 			Status:  "success",
@@ -191,7 +202,6 @@ func handleJSON(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// If the key is "message" and has a valid value, respond success
 	fmt.Printf("Received message: %s\n", reqData["message"])
 
 	response := ResponseData{
@@ -203,19 +213,17 @@ func handleJSON(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	// Initialize database connection
 	initDB()
+	defer func() {
+		_ = disconnectFunc()
+	}()
 
-	// Serve static files (HTML, CSS, JS)
 	fs := http.FileServer(http.Dir("./static"))
 	http.Handle("/", fs)
 
-	// Handle JSON API endpoint
 	http.HandleFunc("/api/json", handleJSON)
-
-	// CRUD API endpoints for users
 	http.HandleFunc("/api/user/create", createUser)
-	http.HandleFunc("/api/users", getUsers) // Endpoint for retrieving all users
+	http.HandleFunc("/api/users", getUsers)
 	http.HandleFunc("/api/user/get", getUserByID)
 	http.HandleFunc("/api/user/update", updateUser)
 	http.HandleFunc("/api/user/delete", deleteUser)
