@@ -110,8 +110,12 @@ func getUsers(w http.ResponseWriter, r *http.Request) {
 
 func getUserByID(w http.ResponseWriter, r *http.Request) {
 	id := r.URL.Query().Get("id")
+	objectID, err := primitive.ObjectIDFromHex(id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+	}
 	var user User
-	err := db.FindOne(context.Background(), bson.M{"_id": id}).Decode(&user)
+	err = db.FindOne(context.Background(), bson.M{"_id": objectID}).Decode(&user)
 	if err != nil {
 		http.Error(w, `{"status":"fail","message":"User not found"}`, http.StatusNotFound)
 		return
@@ -120,28 +124,52 @@ func getUserByID(w http.ResponseWriter, r *http.Request) {
 }
 
 func updateUser(w http.ResponseWriter, r *http.Request) {
+	// Получение ID из параметров URL
+	id := r.URL.Query().Get("id")
+	objectID, err := primitive.ObjectIDFromHex(id)
+	if err != nil {
+		http.Error(w, `{"status":"fail","message":"Invalid ID format"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Декодирование JSON из тела запроса
 	var user User
-	err := json.NewDecoder(r.Body).Decode(&user)
+	err = json.NewDecoder(r.Body).Decode(&user)
 	if err != nil {
 		http.Error(w, `{"status":"fail","message":"Invalid JSON format"}`, http.StatusBadRequest)
 		return
 	}
 
+	// Проверка обязательных полей
 	if user.Name == "" || user.Email == "" {
 		http.Error(w, `{"status":"fail","message":"Name and Email are required"}`, http.StatusBadRequest)
 		return
 	}
 
-	_, err = db.UpdateOne(context.Background(), bson.M{"_id": user.ID}, bson.M{"$set": bson.M{"name": user.Name, "email": user.Email}})
+	// Обновление записи в базе данных
+	update := bson.M{
+		"$set": bson.M{
+			"name":  user.Name,
+			"email": user.Email,
+		},
+	}
+
+	_, err = db.UpdateOne(
+		context.Background(),
+		bson.M{"_id": objectID},
+		update,
+	)
 	if err != nil {
 		http.Error(w, `{"status":"fail","message":"Error updating user"}`, http.StatusInternalServerError)
 		return
 	}
 
-	response := ResponseData{
-		Status:  "success",
-		Message: "User successfully updated",
+	// Формирование успешного ответа
+	response := map[string]string{
+		"status":  "success",
+		"message": "User successfully updated",
 	}
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(response)
 }
