@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>All Courses - Go-And-Learn</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f4f8fc;
+            color: #333;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+
+        .navbar {
+            background-color: #fff;
+        }
+
+        .navbar .nav-link, .navbar .navbar-brand {
+            color: #0056b3 !important;
+        }
+
+        .navbar .btn-primary {
+          color: #0056b3;
+          text-decoration: none;
+          display: inline-block;
+          padding: 10px 20px;
+          border: 2px solid #0056b3;
+          border-radius: 5px;
+          font-weight: 600;
+          transition: background-color 0.3s, color 0.3s;
+          margin-right: 15px;
+        }
+
+        .hover {
+                background-color: #0056b3;
+                color: #fff;
+        }
+
+        a {
+          color: #0056b3;
+          text-decoration: none;
+          display: inline-block;
+          padding: 10px 20px;
+          border: 2px solid #0056b3;
+          border-radius: 5px;
+          font-weight: 600;
+          transition: background-color 0.3s, color 0.3s;
+          margin-right: 15px;
+        }
+
+        a:hover {
+                background-color: #0056b3;
+                color: #fff;
+        }
+
+        header {
+            background: linear-gradient(90deg, #0056b3 0%, #007bff 100%);
+            color: #fff;
+            text-align: center;
+            padding: 50px 20px;
+        }
+
+        header h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+        }
+
+        header p {
+            font-size: 1.2rem;
+            font-weight: 400;
+            margin-top: 15px;
+        }
+
+        .main-content {
+            flex: 1;
+            padding: 30px 15px;
+        }
+
+        .content-block {
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+            margin-bottom: 30px;
+            padding: 20px 30px;
+            max-width: 800px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .content-block h2, .content-block h3 {
+            font-weight: 600;
+            color: #0056b3;
+            margin-bottom: 15px;
+        }
+
+        .content-block p {
+            font-size: 1.1rem;
+            line-height: 1.8;
+        }
+
+        .cta {
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        .cta a {
+            text-decoration: none;
+            background-color: #0056b3;
+            color: #fff;
+            padding: 15px 30px;
+            border-radius: 5px;
+            font-size: 1.2rem;
+            font-weight: 600;
+        }
+
+        footer {
+            background-color: #0056b3;
+            color: #fff;
+            text-align: center;
+            padding: 10px 0;
+            margin-top: auto;
+        }
+        img {
+            border-radius: 15px; 
+            object-fit: cover;   
+            width: 400px;
+            height: 200px;
+        }
+
+        .course-card-body {
+            padding-top: 15px; /* Внутренний отступ сверху */
+        }
+        
+        .enroll-btn {
+            display: inline-block;
+            padding: 12px 24px;
+            background-color: #28a745; /* Зеленый цвет */
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-weight: 600;
+            text-align: center;
+            text-decoration: none;
+            font-size: 1.1rem;
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        .enroll-btn:hover {
+            background-color: #218838; /* Темно-зеленый на ховер */
+            color: #fff;
+        }
+    </style>
+</head>
+<body>
+    <!-- Navbar -->
+    <nav class="navbar navbar-expand-lg">
+        <div class="container">
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a href="/">Home</a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="/about">About Us</a>
+                      </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#">Log In</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="btn btn-primary nav-link text-white px-4" href="#">Sign Up</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Header -->
+    <header>
+        <h1>All Courses</h1>
+        <p>Explore the wide range of courses available to you!</p>
+    </header>
+
+   <!-- Main Content -->
+<div class="main-content container">
+    <div class="filter-section mb-4">
+        <label for="sort-options" class="form-label">Sort Courses:</label>
+        <select id="sort-options" class="form-select" onchange="sortCourses()">
+            <option value="default">Default</option>
+            <option value="asc">Price: Low to High</option>
+            <option value="desc">Price: High to Low</option>
+        </select>
+    </div>
+    <div id="courses-container" class="row row-cols-1 row-cols-md-3 g-4">
+        <!-- Карточки будут динамически заменяться -->
+    </div>
+</div>
+
+<script>
+    let coursesData = []; // Хранение данных курсов
+
+    // Загрузка данных о курсах с бэкенда
+    async function fetchCourses() {
+        try {
+            const response = await fetch('/all-courses');
+            const courses = await response.json();
+
+            coursesData = courses; // Сохранение курсов в массив
+            renderCourses(coursesData); // Отображение карточек
+        } catch (error) {
+            console.error('Error fetching courses:', error);
+        }
+    }
+
+    // Функция для отображения курсов
+    function renderCourses(courses) {
+        const coursesContainer = document.getElementById('courses-container');
+        coursesContainer.innerHTML = ''; // Очистка контейнера
+
+        courses.forEach(course => {
+            const courseCard = document.createElement('div');
+            courseCard.classList.add('col');
+            courseCard.innerHTML = `
+                <div class="course-card">
+                    <img src="${course.image_url}" alt="Course Image">
+                    <div class="course-card-body">
+                        <h5 class="course-card-title">${course.title}</h5>
+                        <p class="course-card-description">${course.description}</p>
+                    </div>
+                    <div class="course-card-footer">
+                        <a href="#" class="enroll-btn text-success">${course.price} KZT</a>
+                    </div>
+                </div>
+            `;
+            coursesContainer.appendChild(courseCard);
+        });
+    }
+
+    // Функция сортировки курсов
+    function sortCourses() {
+        const sortOption = document.getElementById('sort-options').value;
+
+        let sortedCourses = [...coursesData];
+        if (sortOption === 'asc') {
+            sortedCourses.sort((a, b) => a.price - b.price);
+        } else if (sortOption === 'desc') {
+            sortedCourses.sort((a, b) => b.price - a.price);
+        }
+
+        renderCourses(sortedCourses);
+    }
+
+    // Вызов функции загрузки курсов при загрузке страницы
+    window.onload = fetchCourses;
+</script>
+
+<!-- Footer -->
+<footer>
+    <p class="mb-0">© 2025 Go-And-Learn. All Rights Reserved.</p>
+</footer>
+    
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

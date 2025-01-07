@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"log"
 	"net/http"
+	"sort"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -28,8 +30,16 @@ type User struct {
 	Email string `json:"email" bson:"email"`
 }
 
+type Course struct {
+	ID          primitive.ObjectID `bson:"_id,omitempty"`
+	Title       string             `bson:"title"`
+	Description string             `bson:"description"`
+	ImageURL    string             `bson:"image_url"`
+}
+
 var mongoCli *mongo.Client
 var db *mongo.Collection
+var coursesCollection *mongo.Collection
 var disconnectFunc = func() error { return nil }
 
 func initDB() {
@@ -53,6 +63,47 @@ func initDB() {
 	fmt.Println("Successfully connected to MongoDB!")
 
 	db = client.Database("Go-LMS").Collection("users")
+	coursesCollection = client.Database("Go-LMS").Collection("courses") // Новая коллекция
+}
+
+func GetAllCoursesHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	// Параметр для сортировки из запроса
+	sortOrder := r.URL.Query().Get("sort")
+
+	var courses []bson.M
+	cursor, err := coursesCollection.Find(context.Background(), bson.M{})
+	if err != nil {
+		http.Error(w, "Failed to fetch courses", http.StatusInternalServerError)
+		return
+	}
+	defer cursor.Close(context.Background())
+
+	if err = cursor.All(context.Background(), &courses); err != nil {
+		http.Error(w, "Failed to parse courses", http.StatusInternalServerError)
+		return
+	}
+
+	// Сортировка курсов по цене
+	if sortOrder == "asc" {
+		sort.SliceStable(courses, func(i, j int) bool {
+			// Преобразуем курс в структуру для доступа к цене
+			priceI := courses[i]["price"].(float64)
+			priceJ := courses[j]["price"].(float64)
+			return priceI < priceJ
+		})
+	} else if sortOrder == "desc" {
+		sort.SliceStable(courses, func(i, j int) bool {
+			// Преобразуем курс в структуру для доступа к цене
+			priceI := courses[i]["price"].(float64)
+			priceJ := courses[j]["price"].(float64)
+			return priceI > priceJ
+		})
+	}
+
+	// Отправка отсортированных курсов
+	json.NewEncoder(w).Encode(courses)
 }
 
 func createUser(w http.ResponseWriter, r *http.Request) {
@@ -241,20 +292,28 @@ func handleJSON(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	initDB()
+	initDB() // Инициализация базы данных
 	defer func() {
-		_ = disconnectFunc()
+		_ = disconnectFunc() // Закрытие соединения с базой данных
 	}()
 
+	// Статические файлы (например, CSS, JS, изображения)
 	fs := http.FileServer(http.Dir("./static"))
-	http.Handle("/", fs)
+	http.Handle("/static/", http.StripPrefix("/static/", fs))
 
+	// Обработчики для HTML страниц
+	http.HandleFunc("/", homePage)              // Главная страница
+	http.HandleFunc("/about", aboutPage)        // Страница "О нас"
+	http.HandleFunc("/allcourses", CoursesPage) // Страница "курсы"
+
+	// Обработчики для API
 	http.HandleFunc("/api/json", handleJSON)
 	http.HandleFunc("/api/user/create", createUser)
 	http.HandleFunc("/api/users", getUsers)
 	http.HandleFunc("/api/user/get", getUserByID)
 	http.HandleFunc("/api/user/update", updateUser)
 	http.HandleFunc("/api/user/delete", deleteUser)
+	http.HandleFunc("/all-courses", GetAllCoursesHandler) // для курсов
 
 	port := ":8080"
 	fmt.Printf("Server running at http://localhost%s\n", port)
@@ -262,4 +321,31 @@ func main() {
 	if err != nil {
 		log.Fatalf("Server failed to start: %v", err)
 	}
+}
+
+// Обработчик для главной страницы
+func homePage(w http.ResponseWriter, r *http.Request) {
+	tmpl, err := template.ParseFiles("./static/index.html") // Загружаем файл index.html
+	if err != nil {
+		log.Fatal(err)
+	}
+	tmpl.Execute(w, nil)
+}
+
+// Обработчик для страницы "О нас"
+func aboutPage(w http.ResponseWriter, r *http.Request) {
+	tmpl, err := template.ParseFiles("./static/about.html") // Загружаем файл about.html
+	if err != nil {
+		log.Fatal(err)
+	}
+	tmpl.Execute(w, nil)
+}
+
+// Обработчик для страницы "О курсах"
+func CoursesPage(w http.ResponseWriter, r *http.Request) {
+	tmpl, err := template.ParseFiles("./static/allcourses.html") // Загружаем файл about.html
+	if err != nil {
+		log.Fatal(err)
+	}
+	tmpl.Execute(w, nil)
 }
