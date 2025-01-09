@@ -9,6 +9,10 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
+
+	"gopkg.in/gomail.v2"
 
 	"github.com/sirupsen/logrus"
 	"go.mongodb.org/mongo-driver/bson"
@@ -16,6 +20,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"golang.org/x/crypto/bcrypt"
+	"golang.org/x/time/rate"
 )
 
 type RequestData struct {
@@ -25,6 +30,52 @@ type RequestData struct {
 type ResponseData struct {
 	Status  string `json:"status"`
 	Message string `json:"message"`
+}
+
+type RateLimiter struct {
+	limiter  *rate.Limiter
+	lastSeen time.Time
+}
+
+type RateLimiterConfig struct {
+	RequestsPerSecond float64
+	BurstSize         int
+	ExpirationTime    time.Duration
+}
+
+type RateLimitManager struct {
+	limiters    map[string]*RateLimiter
+	mu          sync.RWMutex
+	config      RateLimiterConfig
+	cleanupTick time.Duration
+}
+
+type EmailConfig struct {
+	Host     string
+	Port     int
+	Username string
+	Password string
+}
+
+type EmailRequest struct {
+	To          []string `json:"to"`
+	Subject     string   `json:"subject"`
+	Body        string   `json:"body"`
+	IsHTML      bool     `json:"is_html"`
+	Attachments []string `json:"attachments,omitempty"`
+}
+
+type EmailService struct {
+	config EmailConfig
+	dialer *gomail.Dialer
+}
+
+func NewEmailService(config EmailConfig) *EmailService {
+	dialer := gomail.NewDialer(config.Host, config.Port, config.Username, config.Password)
+	return &EmailService{
+		config: config,
+		dialer: dialer,
+	}
 }
 
 type User struct {
@@ -48,6 +99,26 @@ var db *mongo.Collection
 var coursesCollection *mongo.Collection
 var disconnectFunc = func() error { return nil }
 var log = logrus.New()
+
+var (
+	publicAPIConfig = RateLimiterConfig{
+		RequestsPerSecond: 10,        // 10 requests per second
+		BurstSize:         20,        // Allow bursts up to 20 requests
+		ExpirationTime:    time.Hour, // Clean up after 1 hour of inactivity
+	}
+
+	adminAPIConfig = RateLimiterConfig{
+		RequestsPerSecond: 30,            // 30 requests per second
+		BurstSize:         50,            // Allow bursts up to 50 requests
+		ExpirationTime:    time.Hour * 2, // Clean up after 2 hours of inactivity
+	}
+
+	emailAPIConfig = RateLimiterConfig{
+		RequestsPerSecond: 2,         // 2 emails per second
+		BurstSize:         5,         // Allow bursts up to 5 emails
+		ExpirationTime:    time.Hour, // Clean up after 1 hour of inactivity
+	}
+)
 
 func initLogger() {
 	log.SetFormatter(&logrus.JSONFormatter{}) // Use JSON format for structured logging
@@ -84,6 +155,236 @@ func initDB() {
 
 	db = client.Database("Go-LMS").Collection("users")
 	coursesCollection = client.Database("Go-LMS").Collection("courses") // Новая коллекция
+}
+
+// NewRateLimitManager creates a new rate limit manager
+func NewRateLimitManager(config RateLimiterConfig) *RateLimitManager {
+	manager := &RateLimitManager{
+		limiters:    make(map[string]*RateLimiter),
+		config:      config,
+		cleanupTick: 5 * time.Minute,
+	}
+
+	// Start cleanup routine
+	go manager.cleanup()
+	return manager
+}
+
+// cleanup removes expired limiters periodically
+func (m *RateLimitManager) cleanup() {
+	ticker := time.NewTicker(m.cleanupTick)
+	for range ticker.C {
+		m.mu.Lock()
+		for clientID, limiter := range m.limiters {
+			if time.Since(limiter.lastSeen) > m.config.ExpirationTime {
+				delete(m.limiters, clientID)
+			}
+		}
+		m.mu.Unlock()
+	}
+}
+
+// GetLimiter returns a rate limiter for a specific client
+func (m *RateLimitManager) GetLimiter(clientID string) *rate.Limiter {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	limiter, exists := m.limiters[clientID]
+	if !exists {
+		limiter = &RateLimiter{
+			limiter:  rate.NewLimiter(rate.Limit(m.config.RequestsPerSecond), m.config.BurstSize),
+			lastSeen: time.Now(),
+		}
+		m.limiters[clientID] = limiter
+	}
+	limiter.lastSeen = time.Now()
+	return limiter.limiter
+}
+
+// RateLimitMiddleware creates a middleware for rate limiting
+func (m *RateLimitManager) RateLimitMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Get client identifier (IP address or user ID)
+		clientID := r.RemoteAddr
+		if userID := r.Header.Get("X-User-ID"); userID != "" {
+			clientID = userID
+		}
+
+		limiter := m.GetLimiter(clientID)
+
+		// Try to get token from bucket
+		ctx := r.Context()
+		if err := limiter.Wait(ctx); err != nil {
+			if err == context.Canceled {
+				w.WriteHeader(http.StatusRequestTimeout)
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Retry-After", "60") // Suggest retry after 60 seconds
+			w.WriteHeader(http.StatusTooManyRequests)
+
+			json.NewEncoder(w).Encode(ResponseData{
+				Status:  "error",
+				Message: "Rate limit exceeded. Please try again later.",
+			})
+			return
+		}
+
+		// Add rate limit headers
+		w.Header().Set("X-RateLimit-Limit", fmt.Sprintf("%.2f", m.config.RequestsPerSecond))
+		w.Header().Set("X-RateLimit-Remaining", fmt.Sprintf("%.2f", limiter.Tokens()))
+		w.Header().Set("X-RateLimit-Reset", fmt.Sprintf("%d", time.Now().Add(time.Second).Unix()))
+
+		next.ServeHTTP(w, r)
+	}
+}
+
+func (s *EmailService) SendEmail(req EmailRequest) error {
+	// Validate request
+	if len(req.To) == 0 {
+		return fmt.Errorf("no recipients specified")
+	}
+	if req.Subject == "" {
+		return fmt.Errorf("subject cannot be empty")
+	}
+	if req.Body == "" {
+		return fmt.Errorf("body cannot be empty")
+	}
+
+	m := gomail.NewMessage()
+	m.SetHeader("From", s.config.Username)
+	m.SetHeader("To", req.To...)
+	m.SetHeader("Subject", req.Subject)
+
+	if req.IsHTML {
+		m.SetBody("text/html", req.Body)
+	} else {
+		m.SetBody("text/plain", req.Body)
+	}
+
+	// Add attachments if any
+	for _, attachment := range req.Attachments {
+		m.Attach(attachment)
+	}
+
+	err := s.dialer.DialAndSend(m)
+	if err != nil {
+		log.WithFields(logrus.Fields{
+			"action": "send_email",
+			"status": "failure",
+			"error":  err.Error(),
+			"to":     req.To,
+			"host":   s.config.Host,
+			"port":   s.config.Port,
+		}).Error("Failed to send email")
+		return fmt.Errorf("failed to send email: %v", err)
+	}
+
+	log.WithFields(logrus.Fields{
+		"action": "send_email",
+		"status": "success",
+		"to":     req.To,
+	}).Info("Email sent successfully")
+
+	return nil
+}
+
+// EmailHandler handles email-related HTTP requests
+func (s *EmailService) EmailHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req EmailRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.WithFields(logrus.Fields{
+			"action": "decode_request",
+			"status": "failure",
+			"error":  err.Error(),
+		}).Error("Failed to decode email request")
+		http.Error(w, "Invalid request format", http.StatusBadRequest)
+		return
+	}
+
+	// Log the request details (excluding sensitive information)
+	log.WithFields(logrus.Fields{
+		"action":  "email_request",
+		"to":      req.To,
+		"subject": req.Subject,
+		"is_html": req.IsHTML,
+	}).Info("Processing email request")
+
+	if err := s.SendEmail(req); err != nil {
+		log.WithFields(logrus.Fields{
+			"action": "send_email",
+			"status": "failure",
+			"error":  err.Error(),
+		}).Error("Failed to send email")
+
+		errResponse := ResponseData{
+			Status:  "error",
+			Message: fmt.Sprintf("Failed to send email: %v", err),
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(errResponse)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(ResponseData{
+		Status:  "success",
+		Message: "Email sent successfully",
+	})
+}
+
+func (s *EmailService) BulkEmailHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var users []User
+	cursor, err := db.Find(r.Context(), bson.M{})
+	if err != nil {
+		http.Error(w, "Failed to fetch users", http.StatusInternalServerError)
+		return
+	}
+	defer cursor.Close(r.Context())
+
+	if err = cursor.All(r.Context(), &users); err != nil {
+		http.Error(w, "Failed to parse users", http.StatusInternalServerError)
+		return
+	}
+
+	var req EmailRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request format", http.StatusBadRequest)
+		return
+	}
+
+	// Send emails to all users
+	for _, user := range users {
+		req.To = []string{user.Email}
+		if err := s.SendEmail(req); err != nil {
+			log.WithFields(logrus.Fields{
+				"action": "send_bulk_email",
+				"status": "failure",
+				"error":  err.Error(),
+				"email":  user.Email,
+			}).Error("Failed to send email")
+			continue
+		}
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(ResponseData{
+		Status:  "success",
+		Message: "Bulk emails sent successfully",
+	})
 }
 
 func signupUser(w http.ResponseWriter, r *http.Request) {
@@ -618,11 +919,66 @@ func GetPaginatedCoursesHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
+func testEmailConfig(config EmailConfig) error {
+	dialer := gomail.NewDialer(config.Host, config.Port, config.Username, config.Password)
+
+	// Try to create a connection to the SMTP server
+	s, err := dialer.Dial()
+	if err != nil {
+		return fmt.Errorf("failed to connect to SMTP server: %v", err)
+	}
+	s.Close()
+	return nil
+}
+
 func main() {
 	initDB() // Инициализация базы данных
 	defer func() {
 		_ = disconnectFunc() // Закрытие соединения с базой данных
 	}()
+
+	publicLimiter := NewRateLimitManager(publicAPIConfig)
+	adminLimiter := NewRateLimitManager(adminAPIConfig)
+	emailLimiter := NewRateLimitManager(emailAPIConfig)
+
+	http.HandleFunc("/api/json", publicLimiter.RateLimitMiddleware(handleJSON))
+	http.HandleFunc("/api/users", publicLimiter.RateLimitMiddleware(getUsers))
+	http.HandleFunc("/api/user/get", publicLimiter.RateLimitMiddleware(getUserByID))
+	http.HandleFunc("/all-courses", publicLimiter.RateLimitMiddleware(GetAllCoursesHandler))
+
+	http.HandleFunc("/api/admin/users", adminLimiter.RateLimitMiddleware(getAllUsers))
+	http.HandleFunc("/api/admin/users/", adminLimiter.RateLimitMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPut:
+			adminUpdateUser(w, r)
+		case http.MethodDelete:
+			adminDeleteUser(w, r)
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	}))
+
+	emailConfig := EmailConfig{
+		Host:     "smtp.gmail.com", // or your SMTP server
+		Port:     587,
+		Username: "bakhytzhanabdilmazhit@gmail.com",
+		Password: "ufoe qtgl zikj eowb",
+	}
+
+	if err := testEmailConfig(emailConfig); err != nil {
+		log.WithFields(logrus.Fields{
+			"action": "test_email_config",
+			"status": "failure",
+			"error":  err.Error(),
+		}).Fatal("Failed to connect to email server")
+	}
+	emailService := NewEmailService(emailConfig)
+
+	http.HandleFunc("/api/admin/send-email", emailLimiter.RateLimitMiddleware(emailService.EmailHandler))
+	http.HandleFunc("/api/admin/bulk-email", emailLimiter.RateLimitMiddleware(emailService.BulkEmailHandler))
+
+	http.HandleFunc("/api/admin/send-email", emailService.EmailHandler)
+	http.HandleFunc("/api/admin/bulk-email", emailService.BulkEmailHandler)
 
 	// Статические файлы (например, CSS, JS, изображения)
 	fs := http.FileServer(http.Dir("./static"))

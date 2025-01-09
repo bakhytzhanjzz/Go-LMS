@@ -46,6 +46,29 @@
             <p>Manage registered users and their permissions</p>
         </div>
 
+        <div class="email-section">
+            <h2>Send Email</h2>
+            <div>
+                <input type="email" id="emailTo" placeholder="Recipient Email">
+                <input type="text" id="emailSubject" placeholder="Subject">
+                <textarea id="emailBody" placeholder="Email Content"></textarea>
+                <label>
+                    <input type="checkbox" id="isHTML"> Send as HTML
+                </label>
+                <button onclick="sendEmail()">Send Email</button>
+            </div>
+        
+            <h2>Send Bulk Email</h2>
+            <div>
+                <input type="text" id="bulkEmailSubject" placeholder="Subject">
+                <textarea id="bulkEmailBody" placeholder="Email Content"></textarea>
+                <label>
+                    <input type="checkbox" id="bulkIsHTML"> Send as HTML
+                </label>
+                <button onclick="sendBulkEmail()">Send to All Users</button>
+            </div>
+        </div>
+
         <div class="row">
             <div class="col-12">
                 <div class="card mb-4">
@@ -140,6 +163,52 @@
                 .catch(error => console.error('Error deleting user:', error));
             }
         }
+
+        async function sendEmail() {
+        const emailData = {
+            to: [document.getElementById('emailTo').value],
+            subject: document.getElementById('emailSubject').value,
+            body: document.getElementById('emailBody').value,
+            is_html: document.getElementById('isHTML').checked,
+            attachments: [] // Add file handling if needed
+        };
+
+        try {
+            const response = await fetch('/api/admin/send-email', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(emailData)
+            });
+            const result = await response.json();
+            alert(result.message);
+        } catch (error) {
+            alert('Failed to send email: ' + error);
+        }
+    }
+
+        async function sendBulkEmail() {
+        const emailData = {
+            subject: document.getElementById('bulkEmailSubject').value,
+            body: document.getElementById('bulkEmailBody').value,
+            is_html: document.getElementById('bulkIsHTML').checked,
+        };
+
+        try {
+            const response = await fetch('/api/admin/bulk-email', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(emailData)
+            });
+            const result = await response.json();
+            alert(result.message);
+        } catch (error) {
+            alert('Failed to send bulk email: ' + error);
+        }
+    }
 
         // Load users when page loads
         document.addEventListener('DOMContentLoaded', loadUsers);
