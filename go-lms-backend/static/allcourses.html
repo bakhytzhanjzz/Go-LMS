@@ -56,8 +56,8 @@
         }
 
         a:hover {
-                background-color: #0056b3;
-                color: #fff;
+            background-color: #0056b3;
+            color: #fff;
         }
 
         header {
@@ -141,48 +141,132 @@
         .enroll-btn {
             display: inline-block;
             padding: 12px 24px;
-            background-color: #28a745; /* Зеленый цвет */
-            color: white;
-            border: none;
+            background-color: #28a745 !important; /* Зеленый цвет */
+            color: white !important;/* Текст белого цвета */
+            border: none !important;
             border-radius: 5px;
             font-weight: 600;
             text-align: center;
             text-decoration: none;
             font-size: 1.1rem;
-            transition: background-color 0.3s, color 0.3s;
+            transition: background-color 0.3s, color 0.3s !important;
         }
 
         .enroll-btn:hover {
-            background-color: #218838; /* Темно-зеленый на ховер */
-            color: #fff;
+            background-color: #218838 !important; /* Темно-зеленый на ховер */
+            color: white !important; /* Текст остается белым при наведении */
+        }
+
+        .pagination {
+             display: flex;
+            justify-content: center;
+            margin-top: 20px;
+            }
+
+        .page-btn {
+            margin: 0 5px;
+            padding: 8px 12px;
+            background-color: #f0f0f0;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .page-btn.active {
+            background-color: #007bff;
+            color: white;
+            font-weight: bold;
+        }
+
+        .page-btn:hover {
+            background-color: #0056b3;
+            color: white;
         }
     </style>
 </head>
 <body>
     <!-- Navbar -->
-    <nav class="navbar navbar-expand-lg">
-        <div class="container">
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav ms-auto">
-                    <li class="nav-item">
-                        <a href="/">Home</a>
-                    </li>
-                    <li class="nav-item">
-                        <a href="/about">About Us</a>
-                      </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="#">Log In</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="btn btn-primary nav-link text-white px-4" href="#">Sign Up</a>
-                    </li>
-                </ul>
+   <nav class="navbar navbar-expand-lg">
+    <div class="container">
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarNav">
+            <ul class="navbar-nav ms-auto">
+                <li class="nav-item">
+                    <a href="/">Home</a>
+                </li>
+                <li class="nav-item">
+                    <a href="/allcourses">All Courses</a>
+                </li>
+                <li class="nav-item">
+                    <button class="btn btn-outline-primary" onclick="openLoginModal()">Log In</button>
+                </li>
+                <li class="nav-item">
+                    <button class="btn btn-primary" onclick="openSignupModal()">Sign Up</button>
+                </li>
+            </ul>
+        </div>
+    </div>
+    </nav>
+
+    <!-- Login Modal -->
+<div class="modal fade" id="loginModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Login</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="loginForm">
+                    <div class="mb-3">
+                        <label for="loginEmail" class="form-label">Email</label>
+                        <input type="email" class="form-control" id="loginEmail" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="loginPassword" class="form-label">Password</label>
+                        <input type="password" class="form-control" id="loginPassword" required>
+                    </div>
+                    <div id="loginError" class="error-message"></div>
+                    <div id="loginSuccess" class="success-message"></div>
+                    <button type="submit" class="btn btn-primary w-100">Login</button>
+                </form>
             </div>
         </div>
-    </nav>
+    </div>
+  </div>
+  
+  <!-- Signup Modal -->
+  <div class="modal fade" id="signupModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Sign Up</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="signupForm">
+                    <div class="mb-3">
+                        <label for="signupName" class="form-label">Full Name</label>
+                        <input type="text" class="form-control" id="signupName" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="signupEmail" class="form-label">Email</label>
+                        <input type="email" class="form-control" id="signupEmail" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="signupPassword" class="form-label">Password</label>
+                        <input type="password" class="form-control" id="signupPassword" required>
+                    </div>
+                    <div id="signupError" class="error-message"></div>
+                    <div id="signupSuccess" class="success-message"></div>
+                    <button type="submit" class="btn btn-primary w-100">Create Account</button>
+                </form>
+            </div>
+        </div>
+    </div>
+  </div>
 
     <!-- Header -->
     <header>
@@ -190,7 +274,7 @@
         <p>Explore the wide range of courses available to you!</p>
     </header>
 
-   <!-- Main Content -->
+  <!-- Main Content -->
 <div class="main-content container">
     <div class="filter-section mb-4">
         <label for="sort-options" class="form-label">Sort Courses:</label>
@@ -200,13 +284,16 @@
             <option value="desc">Price: High to Low</option>
         </select>
     </div>
-    <div id="courses-container" class="row row-cols-1 row-cols-md-3 g-4">
+    <div id="courses-container" class="row row-cols-1 row-cols-md-2 g-4">
         <!-- Карточки будут динамически заменяться -->
     </div>
+    <div id="pagination" class="pagination"></div> <!-- Блок пагинации -->
 </div>
 
 <script>
     let coursesData = []; // Хранение данных курсов
+    let currentPage = 1; // Текущая страница
+    const coursesPerPage = 2; // Количество курсов на страницу
 
     // Загрузка данных о курсах с бэкенда
     async function fetchCourses() {
@@ -215,10 +302,17 @@
             const courses = await response.json();
 
             coursesData = courses; // Сохранение курсов в массив
-            renderCourses(coursesData); // Отображение карточек
+            renderPagination(); // Генерация кнопок пагинации
+            renderCourses(getPaginatedCourses()); // Отображение карточек
         } catch (error) {
             console.error('Error fetching courses:', error);
         }
+    }
+
+    // Получение курсов для текущей страницы
+    function getPaginatedCourses() {
+        const startIndex = (currentPage - 1) * coursesPerPage;
+        return coursesData.slice(startIndex, startIndex + coursesPerPage);
     }
 
     // Функция для отображения курсов
@@ -256,11 +350,116 @@
             sortedCourses.sort((a, b) => b.price - a.price);
         }
 
-        renderCourses(sortedCourses);
+        coursesData = sortedCourses; // Обновление отсортированных данных
+        currentPage = 1; // Возвращение на первую страницу
+        renderPagination();
+        renderCourses(getPaginatedCourses());
+    }
+
+    // Функция отображения кнопок пагинации
+    function renderPagination() {
+        const paginationContainer = document.getElementById('pagination');
+        paginationContainer.innerHTML = ''; // Очистка контейнера пагинации
+
+        const totalPages = Math.ceil(coursesData.length / coursesPerPage);
+
+        for (let i = 1; i <= totalPages; i++) {
+            const pageButton = document.createElement('button');
+            pageButton.classList.add('page-btn');
+            if (i === currentPage) {
+                pageButton.classList.add('active');
+            }
+            pageButton.textContent = i;
+            pageButton.onclick = () => {
+                currentPage = i;
+                renderCourses(getPaginatedCourses());
+                renderPagination();
+            };
+            paginationContainer.appendChild(pageButton);
+        }
     }
 
     // Вызов функции загрузки курсов при загрузке страницы
     window.onload = fetchCourses;
+
+    function openLoginModal() {
+       const loginModal = new bootstrap.Modal(document.getElementById('loginModal'));
+       loginModal.show();
+   }
+
+   function openSignupModal() {
+       const signupModal = new bootstrap.Modal(document.getElementById('signupModal'));
+       signupModal.show();
+   }
+
+   document.getElementById('loginForm').addEventListener('submit', async (e) => {
+       e.preventDefault();
+       const errorDiv = document.getElementById('loginError');
+       const successDiv = document.getElementById('loginSuccess');
+       errorDiv.textContent = '';
+       successDiv.textContent = '';
+
+       const email = document.getElementById('loginEmail').value;
+       const password = document.getElementById('loginPassword').value;
+
+       try {
+           const response = await fetch('/login', {
+               method: 'POST',
+               headers: {
+                   'Content-Type': 'application/json',
+               },
+               body: JSON.stringify({ email, password }),
+           });
+
+           const data = await response.json();
+
+           if (data.status === 'success') {
+               successDiv.textContent = 'Login successful!';
+               setTimeout(() => window.location.reload(), 1000);
+           } else {
+               errorDiv.textContent = data.message || 'Login failed.';
+           }
+       } catch {
+           errorDiv.textContent = 'Error connecting to server.';
+       }
+   });
+
+   document.getElementById('signupForm').addEventListener('submit', async (e) => {
+       e.preventDefault();
+       const errorDiv = document.getElementById('signupError');
+       const successDiv = document.getElementById('signupSuccess');
+       errorDiv.textContent = '';
+       successDiv.textContent = '';
+
+       const name = document.getElementById('signupName').value;
+       const email = document.getElementById('signupEmail').value;
+       const password = document.getElementById('signupPassword').value;
+
+       try {
+           const response = await fetch('/signup', {
+               method: 'POST',
+               headers: {
+                   'Content-Type': 'application/json',
+               },
+               body: JSON.stringify({ name, email, password }),
+           });
+
+           const data = await response.json();
+
+           if (data.status === 'success') {
+               successDiv.textContent = 'Signup successful! Please log in.';
+               setTimeout(() => {
+                   const signupModal = bootstrap.Modal.getInstance(document.getElementById('signupModal'));
+                   signupModal.hide();
+                   openLoginModal();
+               }, 1500);
+           } else {
+               errorDiv.textContent = data.message || 'Signup failed.';
+           }
+       } catch {
+           errorDiv.textContent = 'Error connecting to server.';
+       }
+   });
 </script>
 
 <!-- Footer -->
