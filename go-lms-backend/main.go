@@ -102,7 +102,7 @@ var log = logrus.New()
 
 var (
 	publicAPIConfig = RateLimiterConfig{
-		RequestsPerSecond: 10,        // 10 requests per second
+		RequestsPerSecond: 1,         // 10 requests per second
 		BurstSize:         20,        // Allow bursts up to 20 requests
 		ExpirationTime:    time.Hour, // Clean up after 1 hour of inactivity
 	}
@@ -114,7 +114,7 @@ var (
 	}
 
 	emailAPIConfig = RateLimiterConfig{
-		RequestsPerSecond: 2,         // 2 emails per second
+		RequestsPerSecond: 1,         // 2 emails per second
 		BurstSize:         5,         // Allow bursts up to 5 emails
 		ExpirationTime:    time.Hour, // Clean up after 1 hour of inactivity
 	}
@@ -539,207 +539,6 @@ func GetAllCoursesHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(courses)
 }
 
-func createUser(w http.ResponseWriter, r *http.Request) {
-	var user User
-	err := json.NewDecoder(r.Body).Decode(&user)
-	if err != nil {
-		http.Error(w, `{"status":"fail","message":"Invalid JSON format"}`, http.StatusBadRequest)
-		return
-	}
-
-	if user.Name == "" || user.Email == "" {
-		http.Error(w, `{"status":"fail","message":"Name and Email are required"}`, http.StatusBadRequest)
-		return
-	}
-
-	result, err := db.InsertOne(r.Context(), user)
-	if err != nil {
-		log.WithFields(logrus.Fields{
-			"action": "insert_user",
-			"status": "failure",
-			"error":  err.Error(),
-		}).Error("Failed to insert document into MongoDB")
-		http.Error(w, `{"status":"fail","message":"Error saving user"}`, http.StatusInternalServerError)
-		return
-	}
-
-	log.WithFields(logrus.Fields{
-		"action":  "insert_user",
-		"status":  "success",
-		"user_id": result.InsertedID,
-	}).Info("User successfully created")
-
-	response := ResponseData{
-		Status:  "success",
-		Message: "User successfully created",
-	}
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(response)
-}
-
-func getUsers(w http.ResponseWriter, r *http.Request) {
-	var users []User
-	cursor, err := db.Find(context.Background(), bson.D{})
-	if err != nil {
-		http.Error(w, `{"status":"fail","message":"Error retrieving users"}`, http.StatusInternalServerError)
-		return
-	}
-	defer cursor.Close(context.Background())
-
-	for cursor.Next(context.Background()) {
-		var user User
-		err := cursor.Decode(&user)
-		if err != nil {
-			http.Error(w, `{"status":"fail","message":"Error decoding user"}`, http.StatusInternalServerError)
-			return
-		}
-		users = append(users, user)
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(users)
-}
-
-func getUserByID(w http.ResponseWriter, r *http.Request) {
-	id := r.URL.Query().Get("id")
-	objectID, err := primitive.ObjectIDFromHex(id)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
-	}
-	var user User
-	err = db.FindOne(context.Background(), bson.M{"_id": objectID}).Decode(&user)
-	if err != nil {
-		http.Error(w, `{"status":"fail","message":"User not found"}`, http.StatusNotFound)
-		return
-	}
-	json.NewEncoder(w).Encode(user)
-}
-
-func updateUser(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, `{"status":"fail","message":"Method not allowed"}`, http.StatusMethodNotAllowed)
-		return
-	}
-	// Получение ID из параметров URL
-	id := r.URL.Query().Get("id")
-	objectID, err := primitive.ObjectIDFromHex(id)
-	if err != nil {
-		http.Error(w, `{"status":"fail","message":"Invalid ID format"}`, http.StatusBadRequest)
-		return
-	}
-
-	// Декодирование JSON из тела запроса
-	var user User
-	err = json.NewDecoder(r.Body).Decode(&user)
-	if err != nil {
-		http.Error(w, `{"status":"fail","message":"Invalid JSON format"}`, http.StatusBadRequest)
-		return
-	}
-
-	// Проверка обязательных полей
-	if user.Name == "" || user.Email == "" {
-		http.Error(w, `{"status":"fail","message":"Name and Email are required"}`, http.StatusBadRequest)
-		return
-	}
-
-	// Обновление записи в базе данных
-	update := bson.M{
-		"$set": bson.M{
-			"name":  user.Name,
-			"email": user.Email,
-		},
-	}
-
-	_, err = db.UpdateOne(
-		context.Background(),
-		bson.M{"_id": objectID},
-		update,
-	)
-	if err != nil {
-		http.Error(w, `{"status":"fail","message":"Error updating user"}`, http.StatusInternalServerError)
-		return
-	}
-
-	// Формирование успешного ответа
-	response := map[string]string{
-		"status":  "success",
-		"message": "User successfully updated",
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(response)
-}
-
-func deleteUser(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodDelete {
-		http.Error(w, `{"status":"fail","message":"Method not allowed"}`, http.StatusMethodNotAllowed)
-		return
-	}
-	id := r.URL.Query().Get("id")
-	deletedObjectID, err := primitive.ObjectIDFromHex(id)
-	if err != nil {
-		http.Error(w, `{"status":"fail","message":"Invalid ID format"}`, http.StatusBadRequest)
-		return
-	}
-	_, err = db.DeleteOne(context.Background(), bson.D{{Key: "_id", Value: deletedObjectID}})
-	if err != nil {
-		http.Error(w, `{"status":"fail","message":"Error deleting user"}`, http.StatusInternalServerError)
-		return
-	}
-
-	response := ResponseData{
-		Status:  "success",
-		Message: "User successfully deleted",
-	}
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(response)
-}
-
-func handleJSON(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	if r.Method != http.MethodPost {
-		http.Error(w, `{"status":"fail","message":"Invalid request method"}`, http.StatusMethodNotAllowed)
-		return
-	}
-
-	var reqData map[string]interface{}
-	err := json.NewDecoder(r.Body).Decode(&reqData)
-	if err != nil {
-		http.Error(w, `{"status":"fail","message":"Invalid JSON format"}`, http.StatusBadRequest)
-		return
-	}
-
-	if _, ok := reqData["message"]; !ok {
-		response := ResponseData{
-			Status:  "fail",
-			Message: `"message" key is required`,
-		}
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(response)
-		return
-	}
-
-	if reqData["message"] == "" {
-		response := ResponseData{
-			Status:  "success",
-			Message: "Received an empty message",
-		}
-		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(response)
-		return
-	}
-
-	fmt.Printf("Received message: %s\n", reqData["message"])
-
-	response := ResponseData{
-		Status:  "success",
-		Message: "Data successfully received",
-	}
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(response)
-}
-
 func adminPage(w http.ResponseWriter, r *http.Request) {
 	tmpl, err := template.ParseFiles("./static/admin.html")
 	if err != nil {
@@ -747,36 +546,6 @@ func adminPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tmpl.Execute(w, nil)
-}
-
-func getAllUsers(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	var users []User
-	cursor, err := db.Find(context.Background(), bson.M{})
-	if err != nil {
-		json.NewEncoder(w).Encode(ResponseData{
-			Status:  "error",
-			Message: "Failed to fetch users",
-		})
-		return
-	}
-	defer cursor.Close(context.Background())
-
-	if err = cursor.All(context.Background(), &users); err != nil {
-		json.NewEncoder(w).Encode(ResponseData{
-			Status:  "error",
-			Message: "Failed to parse users",
-		})
-		return
-	}
-
-	// Remove password field from response
-	for i := range users {
-		users[i].Password = ""
-	}
-
-	json.NewEncoder(w).Encode(users)
 }
 
 func adminUpdateUser(w http.ResponseWriter, r *http.Request) {
@@ -941,12 +710,7 @@ func main() {
 	adminLimiter := NewRateLimitManager(adminAPIConfig)
 	emailLimiter := NewRateLimitManager(emailAPIConfig)
 
-	http.HandleFunc("/api/json", publicLimiter.RateLimitMiddleware(handleJSON))
-	http.HandleFunc("/api/users", publicLimiter.RateLimitMiddleware(getUsers))
-	http.HandleFunc("/api/user/get", publicLimiter.RateLimitMiddleware(getUserByID))
 	http.HandleFunc("/all-courses", publicLimiter.RateLimitMiddleware(GetAllCoursesHandler))
-
-	http.HandleFunc("/api/admin/users", adminLimiter.RateLimitMiddleware(getAllUsers))
 	http.HandleFunc("/api/admin/users/", adminLimiter.RateLimitMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPut:
@@ -977,9 +741,6 @@ func main() {
 	http.HandleFunc("/api/admin/send-email", emailLimiter.RateLimitMiddleware(emailService.EmailHandler))
 	http.HandleFunc("/api/admin/bulk-email", emailLimiter.RateLimitMiddleware(emailService.BulkEmailHandler))
 
-	http.HandleFunc("/api/admin/send-email", emailService.EmailHandler)
-	http.HandleFunc("/api/admin/bulk-email", emailService.BulkEmailHandler)
-
 	// Статические файлы (например, CSS, JS, изображения)
 	fs := http.FileServer(http.Dir("./static"))
 	http.Handle("/static/", http.StripPrefix("/static/", fs))
@@ -991,26 +752,6 @@ func main() {
 
 	// Страница администратора
 	http.HandleFunc("/admin", adminPage)
-	http.HandleFunc("/api/admin/users", getAllUsers)
-	http.HandleFunc("/api/admin/users/", func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodPut:
-			adminUpdateUser(w, r)
-		case http.MethodDelete:
-			adminDeleteUser(w, r)
-		default:
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		}
-	})
-
-	// Обработчики для API
-	http.HandleFunc("/api/json", handleJSON)
-	http.HandleFunc("/api/user/create", createUser)
-	http.HandleFunc("/api/users", getUsers)
-	http.HandleFunc("/api/user/get", getUserByID)
-	http.HandleFunc("/api/user/update", updateUser)
-	http.HandleFunc("/api/user/delete", deleteUser)
-	http.HandleFunc("/all-courses", GetAllCoursesHandler) // для курсов
 	http.HandleFunc("/signup", signupUser)
 	http.HandleFunc("/login", loginUser)
 
